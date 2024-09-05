@@ -90,3 +90,31 @@ typings/
 
 # Electron-Forge
 out/
+
+# ignorable files in amazon-chime-sdk-js
+amazon-chime-sdk-js/*~
+amazon-chime-sdk-js/.*sw*
+amazon-chime-sdk-js/*.iml
+amazon-chime-sdk-js/.DS_Store
+amazon-chime-sdk-js/.idea
+amazon-chime-sdk-js/.nyc_output
+amazon-chime-sdk-js/.npmrc
+amazon-chime-sdk-js/__data*
+amazon-chime-sdk-js/build
+amazon-chime-sdk-js/config/tsconfig.red.json
+amazon-chime-sdk-js/coverage
+amazon-chime-sdk-js/demos/browser/logs/
+amazon-chime-sdk-js/demos/components/node_modules
+amazon-chime-sdk-js/demos/react/node_modules
+amazon-chime-sdk-js/demos/react/lib
+amazon-chime-sdk-js/demos/react/public/app.js
+amazon-chime-sdk-js/dist
+amazon-chime-sdk-js/doc
+amazon-chime-sdk-js/integration-test-results/
+amazon-chime-sdk-js/integration/js/logs/
+amazon-chime-sdk-js/integration/js/node_modules
+amazon-chime-sdk-js/integration/js/temp
+amazon-chime-sdk-js/integration/kite-allure-reports
+amazon-chime-sdk-js/integration/logs
+amazon-chime-sdk-js/node_modules
+amazon-chime-sdk-js/src/versioning/version.ts
