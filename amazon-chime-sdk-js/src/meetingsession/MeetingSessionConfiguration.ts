@@ -123,6 +123,11 @@ export default class MeetingSessionConfiguration {
   meetingFeatures: MeetingFeatures = new MeetingFeatures();
 
   /**
+   * Flag to set up insertable stream worker. Default to True
+   */
+  enableInsertableStream: boolean = true;
+
+  /**
    * Constructs a MeetingSessionConfiguration optionally with a chime:CreateMeeting and
    * chime:CreateAttendee response. You can pass in either a JSON object containing the
    * responses, or a JSON object containing the information in the Meeting and Attendee

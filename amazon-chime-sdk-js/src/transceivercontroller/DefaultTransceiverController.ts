@@ -27,6 +27,8 @@ export default class DefaultTransceiverController
   protected groupIdToTransceiver: Map<number, RTCRtpTransceiver> = new Map();
   private audioRedWorker: Worker | null = null;
   private audioRedWorkerURL: string | null = null;
+  private insertableStreamWorker: Worker | null = null;
+  private insertableStreamWorkerURL: string | null = null;
   private audioMetricsHistory: Array<{
     timestampMs: number;
     totalPacketsSent: number;
@@ -36,14 +38,19 @@ export default class DefaultTransceiverController
     RedundantAudioRecoveryMetricsObserver
   >();
   private audioRedEnabled: boolean;
+  // private insertableStreamEnabled: boolean;
   private currentNumRedundantEncodings: number = 0;
   private lastRedHolddownTimerStartTimestampMs: number = 0;
   private lastHighPacketLossEventTimestampMs: number = 0;
   private lastAudioRedTurnOffTimestampMs: number = 0;
+  // private lastInsertableStreamTurnOffTimestampMs: number = 0;
   private readonly maxAudioMetricsHistory: number = 20;
   private readonly audioRedPacketLossShortEvalPeriodMs = 5 * 1000; // 5s
   private readonly audioRedPacketLossLongEvalPeriodMs = 15 * 1000; // 15s
   private readonly audioRedHoldDownTimeMs: number = 5 * 60 * 1000; // 5m
+  // private readonly insertableStreamPacketLossShortEvalPeriodMs = 5 * 1000; // 5s
+  // private readonly insertableStreamPacketLossLongEvalPeriodMs = 15 * 1000; // 15s
+  // private readonly insertableStreamHoldDownTimeMs: number = 5 * 60 * 1000; // 5m
   private readonly redRecoveryTimeMs: number = 1 * 60 * 1000; // 1m
 
   constructor(
@@ -169,9 +176,13 @@ export default class DefaultTransceiverController
         streams: [this.defaultMediaStream],
       });
 
-      if (this.meetingSessionContext?.audioProfile?.hasRedundancyEnabled()) {
-        // This will perform additional necessary setup for the audio transceiver.
-        this.setupAudioRedWorker();
+      // if (this.meetingSessionContext?.audioProfile?.hasRedundancyEnabled()) {
+      //   // This will perform additional necessary setup for the audio transceiver.
+      //   this.setupAudioRedWorker();
+      // }
+
+      if(this.meetingSessionContext.meetingSessionConfiguration.enableInsertableStream) {
+        this.setupInsertableStreamWorker();
       }
     }
 
@@ -574,6 +585,251 @@ export default class DefaultTransceiverController
     this.addRedundantAudioRecoveryMetricsObserver(this.meetingSessionContext?.statsCollector);
   }
 
+  protected setupInsertableStreamWorker(): void {
+    // @ts-ignore
+    const supportsRTCScriptTransform = !!window.RTCRtpScriptTransform;
+    // @ts-ignore
+    const supportsInsertableStreams = !!RTCRtpSender.prototype.createEncodedStreams;
+
+    if (supportsRTCScriptTransform) {
+      // This is the prefered approach according to
+      // https://github.com/w3c/webrtc-encoded-transform/blob/main/explainer.md.
+      this.logger.info(
+        '[InsertableStream] Supports encoded insertable streams using RTCRtpScriptTransform'
+      );
+    } else if (supportsInsertableStreams) {
+      this.logger.info(
+        '[InsertableStream] Supports encoded insertable streams using TransformStream'
+      );
+    } else {
+      this.disableAudioRedundancy();
+      // We need to recreate the peer connection without encodedInsertableStreams in the
+      // peer connection config otherwise we would need to create pass through transforms
+      // for all media streams. Throwing the error here and having AttackMediaInputTask throw the
+      // error again will result in a full reconnect.
+      throw new Error(
+        '[InsertableStream] Encoded insertable streams not supported. Recreating peer connection with audio redundancy disabled.'
+      );
+    }
+
+    // Run the entire redundant audio worker setup in a `try` block to allow any errors to trigger a reconnect with
+    // audio redundancy disabled.
+    try {
+      this.insertableStreamWorkerURL = URL.createObjectURL(
+        new Blob([RedundantAudioEncoderWorkerCode], {
+          type: 'application/javascript',
+        })
+      );
+      this.logger.info(
+        `[InsertableStream] Redundant audio worker URL ${this.insertableStreamWorkerURL}`
+      );
+      this.insertableStreamWorker = new Worker(this.insertableStreamWorkerURL);
+    } catch (error) {
+      this.logger.error(`[InsertableStream] Unable to create audio red worker due to ${error}`);
+      URL.revokeObjectURL(this.insertableStreamWorkerURL);
+      this.insertableStreamWorkerURL = null;
+      this.insertableStreamWorker = null;
+
+      this.disableAudioRedundancy();
+      this.logger.info(
+        `[InsertableStream] Recreating peer connection with audio redundancy disabled`
+      );
+
+      // We need to recreate the peer connection without encodedInsertableStreams in the
+      // peer connection config otherwise we would need to create pass through transforms
+      // for all media streams. Throwing the error here and having AttackMediaInputTask throw the
+      // error again will result in a full reconnect.
+      throw error;
+    }
+    // this.insertableStreamEnabled = true;
+
+    // We cannot use console.log in production code and we cannot
+    // transfer the logger object so we need the worker to post messages
+    // to the main thread for logging
+
+    this.insertableStreamWorker.onmessage = (event: MessageEvent) => {
+      let currentCryptoKey: string;
+      let useCryptoOffset = true;
+      let currentKeyIdentifier = 0;
+
+      // If using crypto offset (controlled by a checkbox):
+      // Do not encrypt the first couple of bytes of the payload. This allows
+      // a middle to determine video keyframes or the opus mode being used.
+      // For VP8 this is the content described in
+      //   https://tools.ietf.org/html/rfc6386#section-9.1
+      // which is 10 bytes for key frames and 3 bytes for delta frames.
+      // For opus (where encodedFrame.type is not set) this is the TOC byte from
+      //   https://tools.ietf.org/html/rfc6716#section-3.1
+      // TODO: make this work for other codecs.
+      //
+      // It makes the (encrypted) video and audio much more fun to watch and listen to
+      // as the decoder does not immediately throw a fatal error.
+      const frameTypeToCryptoOffset = {
+        key: 10,
+        delta: 3,
+        undefined: 1,
+      };
+
+      function dump(
+        encodedFrame: any,
+        direction: any,
+        max = 16
+      ) {
+        const data = new Uint8Array(encodedFrame.data);
+        let bytes = '';
+        for (let j = 0; j < data.length && j < max; j++) {
+          bytes += (data[j] < 16 ? '0' : '') + data[j].toString(16) + ' ';
+        }
+        const metadata = encodedFrame.getMetadata();
+        console.log(
+          performance.now().toFixed(2),
+          direction,
+          bytes.trim(),
+          // 'len=' + encodedFrame.data.byteLength,
+          'type=' + (encodedFrame.type || 'audio'),
+          'ts=' + encodedFrame.timestamp,
+          'ssrc=' + metadata.synchronizationSource,
+          'pt=' + (metadata.payloadType || '(unknown)'),
+          'mimeType=' + (metadata.mimeType || '(unknown)')
+        );
+      }
+
+      let scount = 0;
+      function encodeFunction(encodedFrame:any, controller: any) {
+        if (scount++ < 30) {
+          // dump the first 30 packets.
+          dump(encodedFrame, 'send');
+        }
+        if (currentCryptoKey) {
+          const view = new DataView(encodedFrame.data);
+          // Any length that is needed can be used for the new buffer.
+          const newData = new ArrayBuffer(encodedFrame.data.byteLength + 5);
+          const newView = new DataView(newData);
+
+          const cryptoOffset = useCryptoOffset ? frameTypeToCryptoOffset[encodedFrame.type as keyof typeof frameTypeToCryptoOffset] : 0;
+          for (let i = 0; i < cryptoOffset && i < encodedFrame.data.byteLength; ++i) {
+            newView.setInt8(i, view.getInt8(i));
+          }
+          // This is a bitwise xor of the key with the payload. This is not strong encryption, just a demo.
+          for (let i = cryptoOffset; i < encodedFrame.data.byteLength; ++i) {
+            const keyByte = currentCryptoKey.charCodeAt(i % currentCryptoKey.length);
+            newView.setInt8(i, view.getInt8(i) ^ keyByte);
+          }
+          // Append keyIdentifier.
+          newView.setUint8(encodedFrame.data.byteLength, currentKeyIdentifier % 0xff);
+          // Append checksum
+          newView.setUint32(encodedFrame.data.byteLength + 1, 0xdeadbeef);
+
+          encodedFrame.data = newData;
+        }
+        controller.enqueue(encodedFrame);
+      }
+
+      let rcount = 0;
+      function decodeFunction(encodedFrame: any, controller: any) {
+        if (rcount++ < 30) {
+          // dump the first 30 packets
+          dump(encodedFrame, 'recv');
+        }
+        const view = new DataView(encodedFrame.data);
+        const checksum =
+          encodedFrame.data.byteLength > 4
+            ? view.getUint32(encodedFrame.data.byteLength - 4)
+            : false;
+        if (currentCryptoKey) {
+          if (checksum !== 0xdeadbeef) {
+            console.log('Corrupted frame received, checksum ' + checksum.toString(16));
+            return; // This can happen when the key is set and there is an unencrypted frame in-flight.
+          }
+          const keyIdentifier = view.getUint8(encodedFrame.data.byteLength - 5);
+          if (keyIdentifier !== currentKeyIdentifier) {
+            console.log(
+              `Key identifier mismatch, got ${keyIdentifier} expected ${currentKeyIdentifier}.`
+            );
+            return;
+          }
+
+          const newData = new ArrayBuffer(encodedFrame.data.byteLength - 5);
+          const newView = new DataView(newData);
+          const cryptoOffset = useCryptoOffset ? frameTypeToCryptoOffset[encodedFrame.type as keyof typeof frameTypeToCryptoOffset] : 0;
+
+          for (let i = 0; i < cryptoOffset; ++i) {
+            newView.setInt8(i, view.getInt8(i));
+          }
+          for (let i = cryptoOffset; i < encodedFrame.data.byteLength - 5; ++i) {
+            const keyByte = currentCryptoKey.charCodeAt(i % currentCryptoKey.length);
+            newView.setInt8(i, view.getInt8(i) ^ keyByte);
+          }
+          encodedFrame.data = newData;
+        } else if (checksum === 0xdeadbeef) {
+          return; // encrypted in-flight frame but we already forgot about the key.
+        }
+        controller.enqueue(encodedFrame);
+      }
+
+      function handleTransform(operation: any, readable: any, writable: any) {
+        if (operation === 'encode') {
+          const transformStream = new TransformStream({
+            transform: encodeFunction,
+          });
+          readable.pipeThrough(transformStream).pipeTo(writable);
+        } else if (operation === 'decode') {
+          const transformStream = new TransformStream({
+            transform: decodeFunction,
+          });
+          readable.pipeThrough(transformStream).pipeTo(writable);
+        }
+      }
+
+      if (event.data.operation === 'encode' || event.data.operation === 'decode') {
+        return handleTransform(event.data.operation, event.data.readable, event.data.writable);
+      }
+      if (event.data.operation === 'setCryptoKey') {
+        if (event.data.currentCryptoKey !== currentCryptoKey) {
+          currentKeyIdentifier++;
+        }
+        currentCryptoKey = event.data.currentCryptoKey;
+        useCryptoOffset = event.data.useCryptoOffset;
+      }
+    };
+
+    if (supportsRTCScriptTransform) {
+      // @ts-ignore
+      this._localAudioTransceiver.sender.transform = new RTCRtpScriptTransform(
+        this.insertableStreamWorker,
+        { type: 'SenderTransform' }
+      );
+      // @ts-ignore
+      this._localAudioTransceiver.receiver.transform = new RTCRtpScriptTransform(
+        this.insertableStreamWorker,
+        { type: 'ReceiverTransform' }
+      );
+      // eslint-disable-next-line
+    } /* istanbul ignore else */ else if (supportsInsertableStreams) {
+      // @ts-ignore
+      const sendStreams = this._localAudioTransceiver.sender.createEncodedStreams();
+      // @ts-ignore
+      const receiveStreams = this._localAudioTransceiver.receiver.createEncodedStreams();
+      this.insertableStreamWorker.postMessage(
+        {
+          msgType: 'StartInsertableStreamWorker',
+          send: sendStreams,
+          receive: receiveStreams,
+        },
+        [
+          sendStreams.readable,
+          sendStreams.writable,
+          receiveStreams.readable,
+          receiveStreams.writable,
+        ]
+      );
+    }
+    /* istanbul ignore next */
+    this.meetingSessionContext?.audioVideoController.addObserver(this);
+    /* istanbul ignore next */
+    this.addRedundantAudioRecoveryMetricsObserver(this.meetingSessionContext?.statsCollector);
+  }
+
   /**
    * Adds a transceiver to the peer connection and performs additional necessary setup.
    */
@@ -604,7 +860,7 @@ export default class DefaultTransceiverController
         type: 'PassthroughTransform',
       });
       // eslint-disable-next-line
-    } else /* istanbul ignore else */ if (supportsInsertableStreams) {
+    } /* istanbul ignore else */ else if (supportsInsertableStreams) {
       // @ts-ignore
       const sendStreams = transceiver.sender.createEncodedStreams();
       // @ts-ignore
