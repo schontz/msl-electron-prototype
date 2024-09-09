@@ -144,6 +144,8 @@ import FullJitterLimitedBackoff from './backoff/FullJitterLimitedBackoff';
 import GetUserMediaError from './devicecontroller/GetUserMediaError';
 import GlobalMetricReport from './clientmetricreport/GlobalMetricReport';
 import InMemoryJSONEventBuffer from './eventbuffer/InMemoryJSONEventBuffer';
+import InsertableStreamWorker from './insertablestreamworker/InsertableStreamWorker';
+import InsertableStreamWorkerWorkerCode from './insertablestreamworkerworkercode/InsertableStreamWorkerWorkerCode';
 import IntervalScheduler from './scheduler/IntervalScheduler';
 import JoinAndReceiveIndexTask from './task/JoinAndReceiveIndexTask';
 import LeaveAndReceiveLeaveAckTask from './task/LeaveAndReceiveLeaveAckTask';
@@ -491,6 +493,8 @@ export {
   GetUserMediaError,
   GlobalMetricReport,
   InMemoryJSONEventBuffer,
+  InsertableStreamWorker,
+  InsertableStreamWorkerWorkerCode,
   IntervalScheduler,
   JoinAndReceiveIndexTask,
   LeaveAndReceiveLeaveAckTask,

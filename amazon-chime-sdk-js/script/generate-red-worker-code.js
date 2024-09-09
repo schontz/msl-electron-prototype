@@ -11,7 +11,7 @@ const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
-// Create a temporary tsconfig file to only transpile `RedundantAudioEncoder.ts`.
+// Create a temporary tsconfig file to only transpile `RedundantAudioEncoder.ts` and `InsertableStreamWorker.ts`.
 const configDir = 'config';
 const redTsconfig = 'tsconfig.red.json';
 const redTsconfigContent = `{
@@ -22,6 +22,7 @@ const redTsconfigContent = `{
   },
   "include": [
     "../src/redundantaudioencoder/RedundantAudioEncoder.ts",
+    "../src/insertablestreamworker/InsertableStreamWorker.ts",
   ]
 }
 `;
@@ -42,7 +43,7 @@ function runCommandWithLogs(command) {
 }
 runCommandWithLogs('npm run prebuild');
 
-// Transpile `RedundantAudioEncoder.ts`.
+// Transpile `RedundantAudioEncoder.ts` and `InsertableStreamWorker.ts`.
 let tscPath = path.resolve(`${runCommandWithLogs('npm root').replace(/\n/g, "")}/.bin/tsc`);
 runCommandWithLogs(`${tscPath} --build config/tsconfig.red.json`);
 
@@ -57,7 +58,7 @@ RedundantAudioEncoder.shouldReportStats = true;
 RedundantAudioEncoder.initializeWorker();
 `.replace(/"/g, '\'').replace(/\n/g, "\\n").replace(/\r/g, "\\r");
 
-const workerFileContent = `// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+const redundantAudioEncoderWorkerFileContent = `// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 /**
@@ -72,7 +73,34 @@ const RedundantAudioEncoderWorkerCode = "${redundantAudioEncoderWorkerCode}";
 
 export default RedundantAudioEncoderWorkerCode;
 `;
-const workerDir = './src/redundantaudioencoderworkercode';
-if (!fs.existsSync(workerDir)) fs.mkdirSync(workerDir, { recursive: true });
-const workerFile = 'RedundantAudioEncoderWorkerCode.ts';
-fs.writeFileSync(`${workerDir}/${workerFile}`, workerFileContent);
+const redundantAudioEncoderWorkerDir = './src/redundantaudioencoderworkercode';
+if (!fs.existsSync(redundantAudioEncoderWorkerDir )) fs.mkdirSync(redundantAudioEncoderWorkerDir , { recursive: true });
+const redundantAudioEncoderWorkerFile = 'RedundantAudioEncoderWorkerCode.ts';
+fs.writeFileSync(`${redundantAudioEncoderWorkerDir }/${redundantAudioEncoderWorkerFile}`, redundantAudioEncoderWorkerFileContent);
+
+
+// Generate the file that contains the insertable stream worker worker code string.
+const InsertableStreamWorker = require('../build/insertablestreamworker/InsertableStreamWorker.js').default;
+const insertableStreamWorkerWorkerCode = `${InsertableStreamWorker.toString()}
+InsertableStreamWorker.initializeWorker();
+`.replace(/"/g, '\'').replace(/\n/g, "\\n").replace(/\r/g, "\\r");
+
+const insertableStreamWorkerWorkerFileContent = `// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+/**
+ * This file was generated with the \`generate-red-worker-code.js\` script.
+ */
+
+/**
+ * Insertable Stream worker worker code string.
+ */
+// eslint-disable-next-line
+const InsertableStreamWorkerWorkerCode = "${insertableStreamWorkerWorkerCode}";
+
+export default InsertableStreamWorkerWorkerCode;
+`;
+const insertableStreamWorkerWorkerDir = './src/insertablestreamworkerworkercode';
+if (!fs.existsSync(insertableStreamWorkerWorkerDir)) fs.mkdirSync(insertableStreamWorkerWorkerDir, { recursive: true });
+const insertableStreamWorkerWorkerFile = 'InsertableStreamWorkerWorkerCode.ts';
+fs.writeFileSync(`${insertableStreamWorkerWorkerDir}/${insertableStreamWorkerWorkerFile}`, insertableStreamWorkerWorkerFileContent);
