@@ -3,6 +3,9 @@ export default class InsertableStreamWorker {
   private currentCryptoKey: string;
   private useCryptoOffset: boolean = true;
   private currentKeyIdentifier: number = 0;
+  private scount = 0;
+  private rcount = 0;
+
 
   private readonly frameTypeToCryptoOffset = {
     key: 10,
@@ -11,6 +14,7 @@ export default class InsertableStreamWorker {
   };
 
   dump(encodedFrame: any, direction: any, max = 16): void {
+    console.log('*** dump::direction:', direction)
     const data = new Uint8Array(encodedFrame.data);
     let bytes = '';
     for (let j = 0; j < data.length && j < max; j++) {
@@ -29,8 +33,6 @@ export default class InsertableStreamWorker {
       'mimeType=' + (metadata.mimeType || '(unknown)')
     );
   }
-
-  private scount = 0;
 
   encodeFunction(encodedFrame: any, controller: any): void{
     if (this.scount++ < 30) {
@@ -66,8 +68,6 @@ export default class InsertableStreamWorker {
     }
     controller.enqueue(encodedFrame);
   }
-
-  private rcount = 0;
 
   decodeFunction(encodedFrame: any, controller: any) {
     if (this.rcount++ < 30) {
@@ -116,12 +116,12 @@ export default class InsertableStreamWorker {
   handleTransform(operation: any, readable: any, writable: any) {
     if (operation === 'encode') {
       const transformStream = new TransformStream({
-        transform: this.encodeFunction,
+        transform: (encodedFrame, controller) => this.encodeFunction(encodedFrame, controller),
       });
       readable.pipeThrough(transformStream).pipeTo(writable);
     } else if (operation === 'decode') {
       const transformStream = new TransformStream({
-        transform: this.decodeFunction,
+        transform: (encodedFrame, controller) => this.decodeFunction(encodedFrame, controller),
       });
       readable.pipeThrough(transformStream).pipeTo(writable);
     }

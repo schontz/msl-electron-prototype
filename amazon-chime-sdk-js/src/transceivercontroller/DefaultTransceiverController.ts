@@ -182,7 +182,8 @@ export default class DefaultTransceiverController
       //   this.setupAudioRedWorker();
       // }
 
-      if(this.meetingSessionContext.meetingSessionConfiguration.enableInsertableStream) {
+      // Use InsertableStreamWorker for the demo
+      if (this.meetingSessionContext.meetingSessionConfiguration.enableInsertableStream) {
         this.disableAudioRedundancy();
         this.setupInsertableStreamWorker();
       }
@@ -562,7 +563,7 @@ export default class DefaultTransceiverController
         { type: 'ReceiverTransform' }
       );
       // eslint-disable-next-line
-    } else /* istanbul ignore else */ if (supportsInsertableStreams) {
+    } /* istanbul ignore else */ else if (supportsInsertableStreams) {
       // @ts-ignore
       const sendStreams = this._localAudioTransceiver.sender.createEncodedStreams();
       // @ts-ignore
@@ -625,6 +626,7 @@ export default class DefaultTransceiverController
     // transfer the logger object so we need the worker to post messages
     // to the main thread for logging
 
+    // For Firefox
     if (supportsRTCScriptTransform) {
       // @ts-ignore
       this._localAudioTransceiver.sender.transform = new RTCRtpScriptTransform(
@@ -637,23 +639,31 @@ export default class DefaultTransceiverController
         { type: 'ReceiverTransform' }
       );
       // eslint-disable-next-line
-    } /* istanbul ignore else */ else if (supportsInsertableStreams) {
+    } /* istanbul ignore else */
+    // For Chrome
+    else if (supportsInsertableStreams) {
       // @ts-ignore
       const sendStreams = this._localAudioTransceiver.sender.createEncodedStreams();
       // @ts-ignore
       const receiveStreams = this._localAudioTransceiver.receiver.createEncodedStreams();
+      const { readable: sendReadable, writable: sendWritable } = sendStreams;
       this.insertableStreamWorker.postMessage(
         {
-          msgType: 'StartInsertableStreamWorker',
-          send: sendStreams,
-          receive: receiveStreams,
+          operation: 'encode',
+          readable: sendReadable,
+          writable: sendWritable,
         },
-        [
-          sendStreams.readable,
-          sendStreams.writable,
-          receiveStreams.readable,
-          receiveStreams.writable,
-        ]
+        [sendReadable, sendWritable]
+      );
+
+      const { readable: receiveReadable, writable: receiveWritable } = receiveStreams;
+      this.insertableStreamWorker.postMessage(
+        {
+          operation: 'decode',
+          readable: receiveReadable,
+          writable: receiveWritable,
+        },
+        [receiveReadable, receiveWritable]
       );
     }
     /* istanbul ignore next */
