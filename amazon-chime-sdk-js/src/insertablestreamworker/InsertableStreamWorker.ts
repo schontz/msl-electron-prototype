@@ -35,6 +35,7 @@ export default class InsertableStreamWorker {
   }
 
   encodeFunction(encodedFrame: any, controller: any): void{
+    console.log('*** encodeFunction, this.scount:', this.scount)
     if (this.scount++ < 30) {
       // dump the first 30 packets.
       this.dump(encodedFrame, 'send');
@@ -70,6 +71,7 @@ export default class InsertableStreamWorker {
   }
 
   decodeFunction(encodedFrame: any, controller: any) {
+    console.log('*** decodeFunction, this.rcount:', this.rcount)
     if (this.rcount++ < 30) {
       // dump the first 30 packets
       this.dump(encodedFrame, 'recv');
@@ -114,6 +116,7 @@ export default class InsertableStreamWorker {
   }
 
   handleTransform(operation: any, readable: any, writable: any) {
+    console.log('*** handleTransform, operation:', operation)
     if (operation === 'encode') {
       const transformStream = new TransformStream({
         transform: (encodedFrame, controller) => this.encodeFunction(encodedFrame, controller),
@@ -131,6 +134,7 @@ export default class InsertableStreamWorker {
     console.log(`Insertable stream worker initializing`)
     const worker = new InsertableStreamWorker();
     self.onmessage = (event: MessageEvent) => {
+      console.log('*** event.data.device:', event.data.device)
       if (event.data.operation === 'encode' || event.data.operation === 'decode') {
         return worker.handleTransform(
           event.data.operation,

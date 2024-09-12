@@ -185,7 +185,7 @@ export default class DefaultTransceiverController
       // Use InsertableStreamWorker for the demo
       if (this.meetingSessionContext.meetingSessionConfiguration.enableInsertableStream) {
         this.disableAudioRedundancy();
-        this.setupInsertableStreamWorker();
+        // this.setupInsertableStreamWorker();
       }
     }
 
@@ -195,6 +195,7 @@ export default class DefaultTransceiverController
         streams: [this.defaultMediaStream],
       });
     }
+    this.setupInsertableStreamWorker();
   }
 
   async replaceAudioTrack(track: MediaStreamTrack): Promise<boolean> {
@@ -642,28 +643,58 @@ export default class DefaultTransceiverController
     } /* istanbul ignore else */
     // For Chrome
     else if (supportsInsertableStreams) {
+      // For _localAudioTransceiver
       // @ts-ignore
-      const sendStreams = this._localAudioTransceiver.sender.createEncodedStreams();
+      const sendAudioStreams = this._localAudioTransceiver.sender.createEncodedStreams();
       // @ts-ignore
-      const receiveStreams = this._localAudioTransceiver.receiver.createEncodedStreams();
-      const { readable: sendReadable, writable: sendWritable } = sendStreams;
+      const receiveAudioStreams = this._localAudioTransceiver.receiver.createEncodedStreams();
+      const { readable: sendAudioReadable, writable: sendAudioWritable } = sendAudioStreams;
       this.insertableStreamWorker.postMessage(
         {
           operation: 'encode',
-          readable: sendReadable,
-          writable: sendWritable,
+          readable: sendAudioReadable,
+          writable: sendAudioWritable,
+          device: 'audio',
         },
-        [sendReadable, sendWritable]
+        [sendAudioReadable, sendAudioWritable]
       );
 
-      const { readable: receiveReadable, writable: receiveWritable } = receiveStreams;
+      const { readable: receiveAudioReadable, writable: receiveAudioWritable } = receiveAudioStreams;
       this.insertableStreamWorker.postMessage(
         {
           operation: 'decode',
-          readable: receiveReadable,
-          writable: receiveWritable,
+          readable: receiveAudioReadable,
+          writable: receiveAudioWritable,
+          device: 'audio',
         },
-        [receiveReadable, receiveWritable]
+        [receiveAudioReadable, receiveAudioWritable]
+      );
+
+      // For _localVideoTransceiver
+      // @ts-ignore
+      const sendVideoStreams = this._localCameraTransceiver.sender.createEncodedStreams();
+      // @ts-ignore
+      const receiveVideoStreams = this._localCameraTransceiver.receiver.createEncodedStreams();
+      const { readable: sendVideoReadable, writable: sendVideoWritable } = sendVideoStreams;
+      this.insertableStreamWorker.postMessage(
+        {
+          operation: 'encode',
+          readable: sendVideoReadable,
+          writable: sendVideoWritable,
+          device: 'video',
+        },
+        [sendVideoReadable, sendVideoWritable]
+      );
+
+      const { readable: receiveVideoReadable, writable: receiveVideoWritable } = receiveVideoStreams;
+      this.insertableStreamWorker.postMessage(
+        {
+          operation: 'decode',
+          readable: receiveVideoReadable,
+          writable: receiveVideoWritable,
+          device: 'video',
+        },
+        [receiveVideoReadable, receiveVideoWritable]
       );
     }
     /* istanbul ignore next */
