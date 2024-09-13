@@ -196,8 +196,10 @@ export default class DefaultTransceiverController
         direction: 'inactive',
         streams: [this.defaultMediaStream],
       });
+      console.log('*** before calling this.setupInsertableStreamWorker')
+      this.setupInsertableStreamWorker();
     }
-    this.setupInsertableStreamWorker();
+    // this.setupInsertableStreamWorker();
   }
 
   async replaceAudioTrack(track: MediaStreamTrack): Promise<boolean> {
@@ -420,7 +422,7 @@ export default class DefaultTransceiverController
     return this.groupIdToTransceiver.get(groupId)?.mid ?? undefined;
   }
 
-   
+  // to comment out
   setupSenderInsertableStream(sender: RTCRtpSender, kind: string) {
     if (!this.browserBehavior.supportsEndToEndEncryption()) {
       this.logger.warn('### End-to-end encryption not supported');
@@ -439,20 +441,41 @@ export default class DefaultTransceiverController
   }
  
   setupReceiverInsertableStream(receiver: RTCRtpReceiver, kind: string) {
-    if (!this.browserBehavior.supportsEndToEndEncryption()) {
-      this.logger.warn('### End-to-end encryption not supported');
-      return;
-    }
+    // if (!this.browserBehavior.supportsEndToEndEncryption()) {
+    //   this.logger.warn('### End-to-end encryption not supported');
+    //   return;
+    // }
  
-    if (receiver) {
-      this.logger.info(`### Setting up insertable ${kind} stream for receiver`);
+    // if (receiver) {
+    //   this.logger.info(`### Setting up insertable ${kind} stream for receiver`);
  
-      if (kind === 'audio') {
-        this.mediaEncoderObserver?.audioReceiverDidReceive(receiver);
-      } else {
-        this.mediaEncoderObserver?.videoReceiverDidReceive(receiver);
-      }
+    //   if (kind === 'audio') {
+    //     this.mediaEncoderObserver?.audioReceiverDidReceive(receiver);
+    //   } else {
+    //     this.mediaEncoderObserver?.videoReceiverDidReceive(receiver);
+    //   }
+    // }
+  
+    console.log('*** receiver:', receiver)
+    // @ts-ignore
+    const receiveVideoStreams = receiver.createEncodedStreams();
+    console.log('*** receiveVideoStreams:', receiveVideoStreams)
+    // const receiveVideoStreams = this._localCameraTransceiver.receiver.createEncodedStreams();
+    const { readable: receiveVideoReadable, writable: receiveVideoWritable } = receiveVideoStreams;
+    if(!this.insertableStreamWorker){
+      this.insertableStreamWorker = new Worker(this.insertableStreamWorkerURL);
     }
+    
+    console.log('*** this.insertableStreamWorker:', this.insertableStreamWorker)
+    this.insertableStreamWorker.postMessage(
+      {
+        operation: 'decode',
+        readable: receiveVideoReadable,
+        writable: receiveVideoWritable,
+        device: 'video',
+      },
+      [receiveVideoReadable, receiveVideoWritable]
+    )
   }
 
   protected transceiverIsVideo(transceiver: RTCRtpTransceiver): boolean {
@@ -710,8 +733,6 @@ export default class DefaultTransceiverController
       // For _localVideoTransceiver
       // @ts-ignore
       const sendVideoStreams = this._localCameraTransceiver.sender.createEncodedStreams();
-      // @ts-ignore
-      const receiveVideoStreams = this._localCameraTransceiver.receiver.createEncodedStreams();
       const { readable: sendVideoReadable, writable: sendVideoWritable } = sendVideoStreams;
       this.insertableStreamWorker.postMessage(
         {
@@ -723,16 +744,18 @@ export default class DefaultTransceiverController
         [sendVideoReadable, sendVideoWritable]
       );
 
-      const { readable: receiveVideoReadable, writable: receiveVideoWritable } = receiveVideoStreams;
-      this.insertableStreamWorker.postMessage(
-        {
-          operation: 'decode',
-          readable: receiveVideoReadable,
-          writable: receiveVideoWritable,
-          device: 'video',
-        },
-        [receiveVideoReadable, receiveVideoWritable]
-      );
+      // @ts-ignore
+      // const receiveVideoStreams = this._localCameraTransceiver.receiver.createEncodedStreams();
+      // const { readable: receiveVideoReadable, writable: receiveVideoWritable } = receiveVideoStreams;
+      // this.insertableStreamWorker.postMessage(
+      //   {
+      //     operation: 'decode',
+      //     readable: receiveVideoReadable,
+      //     writable: receiveVideoWritable,
+      //     device: 'video',
+      //   },
+      //   [receiveVideoReadable, receiveVideoWritable]
+      // );
     }
     /* istanbul ignore next */
     this.meetingSessionContext?.audioVideoController.addObserver(this);

@@ -84,7 +84,10 @@ export default class CreatePeerConnectionTask extends BaseTask implements Remova
     // @ts-ignore
     configuration.sdpSemantics = 'unified-plan';
     // @ts-ignore
-    configuration.encodedInsertableStreams = this.context.audioProfile.hasRedundancyEnabled();
+    // configuration.encodedInsertableStreams = this.context.audioProfile.hasRedundancyEnabled();
+    configuration.encodedInsertableStreams = true;
+    // @ts-ignore
+    console.log('*** configuration.encodedInsertableStreams:', configuration.encodedInsertableStreams)
     if (this.context.peer) {
       this.context.logger.info('reusing peer connection');
     } else {
@@ -121,7 +124,7 @@ export default class CreatePeerConnectionTask extends BaseTask implements Remova
     const stream: MediaStream = event.streams[0];
     if (track.kind === 'audio') {
       this.context.audioMixController.bindAudioStream(stream);
-      this.context.transceiverController.setupReceiverInsertableStream(event.transceiver.receiver, track.kind);
+      // this.context.transceiverController.setupReceiverInsertableStream(event.transceiver.receiver, track.kind);
     } else if (track.kind === 'video' && !this.trackIsVideoInput(track)) {
       this.addRemoteVideoTrack(track, stream);
       this.context.transceiverController.setupReceiverInsertableStream(event.transceiver.receiver, track.kind);
