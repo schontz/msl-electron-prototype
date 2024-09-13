@@ -137,4 +137,8 @@ export default interface TransceiverController {
   removeRedundantAudioRecoveryMetricsObserver?(
     observer: RedundantAudioRecoveryMetricsObserver
   ): void;
+
+  setupSenderInsertableStream(sender: RTCRtpSender, kind: string): void;
+ 
+  setupReceiverInsertableStream(receiver: RTCRtpReceiver, kind: string): void;
 }

@@ -121,8 +121,10 @@ export default class CreatePeerConnectionTask extends BaseTask implements Remova
     const stream: MediaStream = event.streams[0];
     if (track.kind === 'audio') {
       this.context.audioMixController.bindAudioStream(stream);
+      this.context.transceiverController.setupReceiverInsertableStream(event.transceiver.receiver, track.kind);
     } else if (track.kind === 'video' && !this.trackIsVideoInput(track)) {
       this.addRemoteVideoTrack(track, stream);
+      this.context.transceiverController.setupReceiverInsertableStream(event.transceiver.receiver, track.kind);
     }
   };
 

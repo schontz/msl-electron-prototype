@@ -16,6 +16,7 @@ import AsyncScheduler from '../scheduler/AsyncScheduler';
 import VideoStreamIdSet from '../videostreamidset/VideoStreamIdSet';
 import VideoStreamIndex from '../videostreamindex/VideoStreamIndex';
 import TransceiverController from './TransceiverController';
+import MediaEncoderObserver from '../mediaencoderobserver/MediaEncoderObserver';
 
 export default class DefaultTransceiverController
   implements TransceiverController, AudioVideoObserver {
@@ -57,7 +58,8 @@ export default class DefaultTransceiverController
   constructor(
     protected logger: Logger,
     protected browserBehavior: BrowserBehavior,
-    protected meetingSessionContext?: AudioVideoControllerState
+    protected meetingSessionContext?: AudioVideoControllerState,
+    protected mediaEncoderObserver?: MediaEncoderObserver
   ) {}
 
   async setEncodingParameters(
@@ -418,6 +420,41 @@ export default class DefaultTransceiverController
     return this.groupIdToTransceiver.get(groupId)?.mid ?? undefined;
   }
 
+   
+  setupSenderInsertableStream(sender: RTCRtpSender, kind: string) {
+    if (!this.browserBehavior.supportsEndToEndEncryption()) {
+      this.logger.warn('### End-to-end encryption not supported');
+      return;
+    }
+ 
+    if (sender) {
+      this.logger.info(`### Setting up insertable ${kind} stream for sender`);
+ 
+      if (kind === 'audio') {
+        this.mediaEncoderObserver?.audioSenderDidReceive(sender);
+      } else {
+        this.mediaEncoderObserver?.videoSenderDidReceive(sender);
+      }
+    }
+  }
+ 
+  setupReceiverInsertableStream(receiver: RTCRtpReceiver, kind: string) {
+    if (!this.browserBehavior.supportsEndToEndEncryption()) {
+      this.logger.warn('### End-to-end encryption not supported');
+      return;
+    }
+ 
+    if (receiver) {
+      this.logger.info(`### Setting up insertable ${kind} stream for receiver`);
+ 
+      if (kind === 'audio') {
+        this.mediaEncoderObserver?.audioReceiverDidReceive(receiver);
+      } else {
+        this.mediaEncoderObserver?.videoReceiverDidReceive(receiver);
+      }
+    }
+  }
+
   protected transceiverIsVideo(transceiver: RTCRtpTransceiver): boolean {
     return (
       (transceiver.receiver &&
@@ -643,32 +680,32 @@ export default class DefaultTransceiverController
     } /* istanbul ignore else */
     // For Chrome
     else if (supportsInsertableStreams) {
-      // For _localAudioTransceiver
-      // @ts-ignore
-      const sendAudioStreams = this._localAudioTransceiver.sender.createEncodedStreams();
-      // @ts-ignore
-      const receiveAudioStreams = this._localAudioTransceiver.receiver.createEncodedStreams();
-      const { readable: sendAudioReadable, writable: sendAudioWritable } = sendAudioStreams;
-      this.insertableStreamWorker.postMessage(
-        {
-          operation: 'encode',
-          readable: sendAudioReadable,
-          writable: sendAudioWritable,
-          device: 'audio',
-        },
-        [sendAudioReadable, sendAudioWritable]
-      );
+      // // For _localAudioTransceiver
+      // // @ts-ignore
+      // const sendAudioStreams = this._localAudioTransceiver.sender.createEncodedStreams();
+      // // @ts-ignore
+      // const receiveAudioStreams = this._localAudioTransceiver.receiver.createEncodedStreams();
+      // const { readable: sendAudioReadable, writable: sendAudioWritable } = sendAudioStreams;
+      // this.insertableStreamWorker.postMessage(
+      //   {
+      //     operation: 'encode',
+      //     readable: sendAudioReadable,
+      //     writable: sendAudioWritable,
+      //     device: 'audio',
+      //   },
+      //   [sendAudioReadable, sendAudioWritable]
+      // );
 
-      const { readable: receiveAudioReadable, writable: receiveAudioWritable } = receiveAudioStreams;
-      this.insertableStreamWorker.postMessage(
-        {
-          operation: 'decode',
-          readable: receiveAudioReadable,
-          writable: receiveAudioWritable,
-          device: 'audio',
-        },
-        [receiveAudioReadable, receiveAudioWritable]
-      );
+      // const { readable: receiveAudioReadable, writable: receiveAudioWritable } = receiveAudioStreams;
+      // this.insertableStreamWorker.postMessage(
+      //   {
+      //     operation: 'decode',
+      //     readable: receiveAudioReadable,
+      //     writable: receiveAudioWritable,
+      //     device: 'audio',
+      //   },
+      //   [receiveAudioReadable, receiveAudioWritable]
+      // );
 
       // For _localVideoTransceiver
       // @ts-ignore
