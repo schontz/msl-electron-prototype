@@ -1,11 +1,9 @@
-
 export default class InsertableStreamWorker {
   private currentCryptoKey: string;
   private useCryptoOffset: boolean = true;
   private currentKeyIdentifier: number = 0;
   private scount = 0;
   private rcount = 0;
-
 
   private readonly frameTypeToCryptoOffset = {
     key: 10,
@@ -14,7 +12,7 @@ export default class InsertableStreamWorker {
   };
 
   dump(encodedFrame: any, direction: any, max = 16): void {
-    console.log('*** dump::direction:', direction)
+    console.log('*** dump::direction:', direction);
     const data = new Uint8Array(encodedFrame.data);
     let bytes = '';
     for (let j = 0; j < data.length && j < max; j++) {
@@ -34,13 +32,15 @@ export default class InsertableStreamWorker {
     );
   }
 
-  encodeFunction(encodedFrame: any, controller: any): void{
-    console.log('*** encodeFunction, this.scount:', this.scount)
+  encodeFunction(encodedFrame: any, controller: any): void {
+    console.log('*** encodeFunction, this.scount:', this.scount);
     if (this.scount++ < 30) {
       // dump the first 30 packets.
       this.dump(encodedFrame, 'send');
     }
+    this.currentCryptoKey = '1';
     if (this.currentCryptoKey) {
+      console.log('*** encodeFunction::this.currentCryptoKey:', this.currentCryptoKey);
       const view = new DataView(encodedFrame.data);
       // Any length that is needed can be used for the new buffer.
       const newData = new ArrayBuffer(encodedFrame.data.byteLength + 5);
@@ -48,9 +48,7 @@ export default class InsertableStreamWorker {
       const frameTypeToCryptoOffset = this.frameTypeToCryptoOffset;
 
       const cryptoOffset = this.useCryptoOffset
-        ? frameTypeToCryptoOffset[
-            encodedFrame.type as keyof typeof frameTypeToCryptoOffset
-          ]
+        ? frameTypeToCryptoOffset[encodedFrame.type as keyof typeof frameTypeToCryptoOffset]
         : 0;
       for (let i = 0; i < cryptoOffset && i < encodedFrame.data.byteLength; ++i) {
         newView.setInt8(i, view.getInt8(i));
@@ -71,7 +69,7 @@ export default class InsertableStreamWorker {
   }
 
   decodeFunction(encodedFrame: any, controller: any) {
-    console.log('*** decodeFunction, this.rcount:', this.rcount)
+    console.log('*** decodeFunction, this.rcount:', this.rcount);
     if (this.rcount++ < 30) {
       // dump the first 30 packets
       this.dump(encodedFrame, 'recv');
@@ -79,7 +77,12 @@ export default class InsertableStreamWorker {
     const view = new DataView(encodedFrame.data);
     const checksum =
       encodedFrame.data.byteLength > 4 ? view.getUint32(encodedFrame.data.byteLength - 4) : false;
+
+    // For testing the bad scenior of showing green screen or random noise on the receiver side,
+    // set this.currentCryptoKey = '2
+    this.currentCryptoKey = '1';
     if (this.currentCryptoKey) {
+      console.log('*** decodeFunction::this.currentCryptoKey:', this.currentCryptoKey);
       if (checksum !== 0xdeadbeef) {
         console.log('Corrupted frame received, checksum ' + checksum.toString(16));
         return; // This can happen when the key is set and there is an unencrypted frame in-flight.
@@ -96,9 +99,7 @@ export default class InsertableStreamWorker {
       const newView = new DataView(newData);
       const frameTypeToCryptoOffset = this.frameTypeToCryptoOffset;
       const cryptoOffset = this.useCryptoOffset
-        ? frameTypeToCryptoOffset[
-            encodedFrame.type as keyof typeof frameTypeToCryptoOffset
-          ]
+        ? frameTypeToCryptoOffset[encodedFrame.type as keyof typeof frameTypeToCryptoOffset]
         : 0;
 
       for (let i = 0; i < cryptoOffset; ++i) {
@@ -109,6 +110,7 @@ export default class InsertableStreamWorker {
         newView.setInt8(i, view.getInt8(i) ^ keyByte);
       }
       encodedFrame.data = newData;
+      console.log('*** decodeFunction::newData:', newData);
     } else if (checksum === 0xdeadbeef) {
       return; // encrypted in-flight frame but we already forgot about the key.
     }
@@ -116,7 +118,7 @@ export default class InsertableStreamWorker {
   }
 
   handleTransform(operation: any, readable: any, writable: any) {
-    console.log('*** handleTransform, operation:', operation)
+    console.log('*** handleTransform, operation:', operation);
     if (operation === 'encode') {
       const transformStream = new TransformStream({
         transform: (encodedFrame, controller) => this.encodeFunction(encodedFrame, controller),
@@ -131,10 +133,9 @@ export default class InsertableStreamWorker {
   }
 
   static initializeWorker(): void {
-    console.log(`Insertable stream worker initializing`)
     const worker = new InsertableStreamWorker();
     self.onmessage = (event: MessageEvent) => {
-      console.log('*** event.data.device:', event.data.device)
+      console.log('*** initializeWorker::event.data.device:', event.data.device);
       if (event.data.operation === 'encode' || event.data.operation === 'decode') {
         return worker.handleTransform(
           event.data.operation,
