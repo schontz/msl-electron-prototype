@@ -16,7 +16,6 @@ import AsyncScheduler from '../scheduler/AsyncScheduler';
 import VideoStreamIdSet from '../videostreamidset/VideoStreamIdSet';
 import VideoStreamIndex from '../videostreamindex/VideoStreamIndex';
 import TransceiverController from './TransceiverController';
-import MediaEncoderObserver from '../mediaencoderobserver/MediaEncoderObserver';
 
 export default class DefaultTransceiverController
   implements TransceiverController, AudioVideoObserver {
@@ -54,7 +53,6 @@ export default class DefaultTransceiverController
     protected logger: Logger,
     protected browserBehavior: BrowserBehavior,
     protected meetingSessionContext?: AudioVideoControllerState,
-    protected mediaEncoderObserver?: MediaEncoderObserver
   ) {}
 
   async setEncodingParameters(

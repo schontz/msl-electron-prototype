@@ -84,10 +84,7 @@ export default class CreatePeerConnectionTask extends BaseTask implements Remova
     // @ts-ignore
     configuration.sdpSemantics = 'unified-plan';
     // @ts-ignore
-    // configuration.encodedInsertableStreams = this.context.audioProfile.hasRedundancyEnabled();
-    configuration.encodedInsertableStreams = true;
-    // @ts-ignore
-    console.log('*** configuration.encodedInsertableStreams:', configuration.encodedInsertableStreams)
+    configuration.encodedInsertableStreams = this.context.meetingSessionConfiguration.enableInsertableStream;
     if (this.context.peer) {
       this.context.logger.info('reusing peer connection');
     } else {

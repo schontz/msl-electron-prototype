@@ -284,23 +284,6 @@ export default class DefaultBrowserBehavior implements BrowserBehavior, Extended
     return this.supportsBackgroundFilter();
   }
 
-  supportsEndToEndEncryption(): boolean {
-    //@ts-ignore
-    let hasEnoughAPIs = !!window.RTCRtpScriptTransform;
- 
-    if (!hasEnoughAPIs) {
-      //@ts-ignore
-      const supportsInsertableStreams = !!RTCRtpSender.prototype.createEncodedStreams;
- 
-      let supportsTransferableStreams = false;
-      try {
-        new ReadableStream();
-        supportsTransferableStreams = true;
-      } catch (e) {}
-      return supportsInsertableStreams && supportsTransferableStreams;
-    }
-  }
-
   // These helpers should be kept private to encourage
   // feature detection instead of browser detection.
   private isIOSSafari(): boolean {

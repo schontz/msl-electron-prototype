@@ -71,9 +71,4 @@ export default interface BrowserBehavior {
    * Returns whether browser supports the playback of canvas-captured stream.
    */
   supportsCanvasCapturedStreamPlayback(): boolean;
-
-  /**
-   * Returns whether browser supports end-to-end encryption.
-   */
-  supportsEndToEndEncryption(): boolean
 }

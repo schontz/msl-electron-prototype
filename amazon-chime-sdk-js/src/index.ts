@@ -155,7 +155,6 @@ import LogLevel from './logger/LogLevel';
 import Logger from './logger/Logger';
 import MediaDeviceFactory from './mediadevicefactory/MediaDeviceFactory';
 import MediaDeviceProxyHandler from './mediadevicefactory/MediaDeviceProxyHandler';
-import MediaEncoderObserver from './mediaencoderobserver/MediaEncoderObserver';
 import MediaStreamBroker from './mediastreambroker/MediaStreamBroker';
 import MediaStreamBrokerObserver from './mediastreambrokerobserver/MediaStreamBrokerObserver';
 import MeetingEventsClientConfiguration from './eventsclientconfiguration/MeetingEventsClientConfiguration';
@@ -507,7 +506,6 @@ export {
   MaybeProvider,
   MediaDeviceFactory,
   MediaDeviceProxyHandler,
-  MediaEncoderObserver,
   MediaStreamBroker,
   MediaStreamBrokerObserver,
   MeetingEventsClientConfiguration,
