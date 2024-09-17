@@ -414,7 +414,6 @@ export default class DefaultTransceiverController
     return this.groupIdToTransceiver.get(groupId)?.mid ?? undefined;
   }
 
-  // to comment out
   setupSenderInsertableStream() {
     // @ts-ignore
     const supportsRTCScriptTransform = !!window.RTCRtpScriptTransform;
@@ -447,7 +446,6 @@ export default class DefaultTransceiverController
       // error again will result in a full reconnect.
       throw error;
     }
-    // this.insertableStreamEnabled = true;
 
     // We cannot use console.log in production code and we cannot
     // transfer the logger object so we need the worker to post messages
@@ -465,8 +463,7 @@ export default class DefaultTransceiverController
         this.insertableStreamWorker,
         { type: 'ReceiverTransform' }
       );
-      // eslint-disable-next-line
-    } /* istanbul ignore else */
+    }
     // For Chrome
     else if (supportsInsertableStreams) {
       // @ts-ignore
