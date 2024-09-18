@@ -7,6 +7,7 @@ import AudioVideoObserver from '../audiovideoobserver/AudioVideoObserver';
 import BrowserBehavior from '../browserbehavior/BrowserBehavior';
 import ClientMetricReport from '../clientmetricreport/ClientMetricReport';
 import RedundantAudioRecoveryMetricReport from '../clientmetricreport/RedundantAudioRecoveryMetricReport';
+import InsertableStreamWorkerWorkerCode from '../insertablestreamworkerworkercode/InsertableStreamWorkerWorkerCode';
 import Logger from '../logger/Logger';
 import RedundantAudioEncoder from '../redundantaudioencoder/RedundantAudioEncoder';
 import RedundantAudioEncoderWorkerCode from '../redundantaudioencoderworkercode/RedundantAudioEncoderWorkerCode';
@@ -27,6 +28,8 @@ export default class DefaultTransceiverController
   protected groupIdToTransceiver: Map<number, RTCRtpTransceiver> = new Map();
   private audioRedWorker: Worker | null = null;
   private audioRedWorkerURL: string | null = null;
+  private insertableStreamWorker: Worker | null = null;
+  private insertableStreamWorkerURL: string | null = null;
   private audioMetricsHistory: Array<{
     timestampMs: number;
     totalPacketsSent: number;
@@ -49,7 +52,7 @@ export default class DefaultTransceiverController
   constructor(
     protected logger: Logger,
     protected browserBehavior: BrowserBehavior,
-    protected meetingSessionContext?: AudioVideoControllerState
+    protected meetingSessionContext?: AudioVideoControllerState,
   ) {}
 
   async setEncodingParameters(
@@ -169,9 +172,14 @@ export default class DefaultTransceiverController
         streams: [this.defaultMediaStream],
       });
 
-      if (this.meetingSessionContext?.audioProfile?.hasRedundancyEnabled()) {
-        // This will perform additional necessary setup for the audio transceiver.
-        this.setupAudioRedWorker();
+      // if (this.meetingSessionContext?.audioProfile?.hasRedundancyEnabled()) {
+      //   // This will perform additional necessary setup for the audio transceiver.
+      //   this.setupAudioRedWorker();
+      // }
+
+      // Use InsertableStreamWorker for the demo
+      if (this.meetingSessionContext.meetingSessionConfiguration.enableInsertableStream) {
+        this.disableAudioRedundancy();
       }
     }
 
@@ -180,6 +188,7 @@ export default class DefaultTransceiverController
         direction: 'inactive',
         streams: [this.defaultMediaStream],
       });
+      this.setupSenderInsertableStream();
     }
   }
 
@@ -403,6 +412,96 @@ export default class DefaultTransceiverController
     return this.groupIdToTransceiver.get(groupId)?.mid ?? undefined;
   }
 
+  setupSenderInsertableStream() {
+    // @ts-ignore
+    const supportsRTCScriptTransform = !!window.RTCRtpScriptTransform;
+    // @ts-ignore
+    const supportsInsertableStreams = !!RTCRtpSender.prototype.createEncodedStreams;
+    // Run the entire redundant audio worker setup in a `try` block to allow any errors to trigger a reconnect with
+    // audio redundancy disabled.
+    try {
+      this.insertableStreamWorkerURL = URL.createObjectURL(
+        new Blob([InsertableStreamWorkerWorkerCode], {
+          type: 'application/javascript',
+        })
+      );
+      this.logger.info(
+        `[InsertableStream] Redundant audio worker URL ${this.insertableStreamWorkerURL}`
+      );
+      this.insertableStreamWorker = new Worker(this.insertableStreamWorkerURL);
+    } catch (error) {
+      this.logger.error(`[InsertableStream] Unable to create audio red worker due to ${error}`);
+      URL.revokeObjectURL(this.insertableStreamWorkerURL);
+      this.insertableStreamWorkerURL = null;
+      this.insertableStreamWorker = null;
+      this.logger.info(
+        `[InsertableStream] Recreating peer connection with audio redundancy disabled`
+      );
+
+      // We need to recreate the peer connection without encodedInsertableStreams in the
+      // peer connection config otherwise we would need to create pass through transforms
+      // for all media streams. Throwing the error here and having AttackMediaInputTask throw the
+      // error again will result in a full reconnect.
+      throw error;
+    }
+
+    // We cannot use console.log in production code and we cannot
+    // transfer the logger object so we need the worker to post messages
+    // to the main thread for logging
+
+    // For Firefox
+    if (supportsRTCScriptTransform) {
+      // @ts-ignore
+      this._localAudioTransceiver.sender.transform = new RTCRtpScriptTransform(
+        this.insertableStreamWorker,
+        { type: 'SenderTransform' }
+      );
+      // @ts-ignore
+      this._localAudioTransceiver.receiver.transform = new RTCRtpScriptTransform(
+        this.insertableStreamWorker,
+        { type: 'ReceiverTransform' }
+      );
+    }
+    // For Chrome
+    else if (supportsInsertableStreams) {
+      // @ts-ignore
+      const sendVideoStreams = this._localCameraTransceiver.sender.createEncodedStreams();
+      const { readable: sendVideoReadable, writable: sendVideoWritable } = sendVideoStreams;
+      this.insertableStreamWorker.postMessage(
+        {
+          operation: 'encode',
+          readable: sendVideoReadable,
+          writable: sendVideoWritable,
+          device: 'video',
+        },
+        [sendVideoReadable, sendVideoWritable]
+      );
+    }
+    /* istanbul ignore next */
+    this.meetingSessionContext?.audioVideoController.addObserver(this);
+    /* istanbul ignore next */
+    this.addRedundantAudioRecoveryMetricsObserver(this.meetingSessionContext?.statsCollector);
+  }
+
+  setupReceiverInsertableStream(receiver: RTCRtpReceiver, kind: string) {
+    // @ts-ignore
+    const receiveVideoStreams = receiver.createEncodedStreams();
+    const { readable: receiveVideoReadable, writable: receiveVideoWritable } = receiveVideoStreams;
+    if (!this.insertableStreamWorker) {
+      this.insertableStreamWorker = new Worker(this.insertableStreamWorkerURL);
+    }
+
+    this.insertableStreamWorker.postMessage(
+      {
+        operation: 'decode',
+        readable: receiveVideoReadable,
+        writable: receiveVideoWritable,
+        device: 'video',
+      },
+      [receiveVideoReadable, receiveVideoWritable]
+    );
+  }
+
   protected transceiverIsVideo(transceiver: RTCRtpTransceiver): boolean {
     return (
       (transceiver.receiver &&
@@ -549,7 +648,7 @@ export default class DefaultTransceiverController
         { type: 'ReceiverTransform' }
       );
       // eslint-disable-next-line
-    } else /* istanbul ignore else */ if (supportsInsertableStreams) {
+    } /* istanbul ignore else */ else if (supportsInsertableStreams) {
       // @ts-ignore
       const sendStreams = this._localAudioTransceiver.sender.createEncodedStreams();
       // @ts-ignore
@@ -604,7 +703,7 @@ export default class DefaultTransceiverController
         type: 'PassthroughTransform',
       });
       // eslint-disable-next-line
-    } else /* istanbul ignore else */ if (supportsInsertableStreams) {
+    } /* istanbul ignore else */ else if (supportsInsertableStreams) {
       // @ts-ignore
       const sendStreams = transceiver.sender.createEncodedStreams();
       // @ts-ignore
