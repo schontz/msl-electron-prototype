@@ -40,7 +40,7 @@ for (const stage of ['a', 'b', 'g', '']) {
   csp['script-src-elem'] += host;
 }
 
-// 2. Access to googleapis for the Segmentation filter 
+// 2. Access to googleapis for the Segmentation filter
 csp['connect-src'] += ' https://storage.googleapis.com';
 
 // 3. Access to jsdelivr for TensorFlow for background blur.
@@ -63,9 +63,9 @@ module.exports = env => {
   return {
     devServer: {
       devMiddleware: {
-        index: `${app}.html`
+        index: `${app}.html`,
       },
-      onListening: (server) => {
+      onListening: server => {
         // Just so that the code in server.js isn't confused about
         // which app finally made it through the gauntlet.
         process.env.npm_config_app = app;
@@ -86,7 +86,7 @@ module.exports = env => {
         '/update_attendee_capabilities': 'http://127.0.0.1:8081',
         '/batch_update_attendee_capabilities_except': 'http://127.0.0.1:8081',
         '/get_attendee': 'http://127.0.0.1:8081',
-      }
+      },
     },
     plugins: [
       new CspHtmlWebpackPlugin(csp),
@@ -98,8 +98,8 @@ module.exports = env => {
       }),
       new InlineChunkHtmlPlugin(HtmlWebpackPlugin, [new RegExp(`${app}`)]),
       new webpack.EnvironmentPlugin({
-        IS_LOCAL: process.env.npm_config_is_local === 'true' ? 'true' : 'false'
-      })
+        IS_LOCAL: process.env.npm_config_is_local === 'true' ? 'true' : 'false',
+      }),
     ],
     entry: [`./app/${app}/${app}.ts`],
     resolve: {
@@ -116,29 +116,32 @@ module.exports = env => {
       rules: [
         {
           test: /\.(svg)$/,
-          type: 'asset/source'
+          type: 'asset/source',
         },
         {
           test: /\.(scss)$/,
-          use: [{
-            loader: 'style-loader',
-            options: {
-              insert: 'head',
+          use: [
+            {
+              loader: 'style-loader',
+              options: {
+                insert: 'head',
+              },
             },
-          }, {
-            loader: 'css-loader',
-          }, {
-            loader: 'postcss-loader',
-            options: {
-              postcssOptions: {
-                plugins: [
-                  "autoprefixer"
-                ]
-              }
+            {
+              loader: 'css-loader',
             },
-          }, {
-            loader: 'sass-loader',
-          }]
+            {
+              loader: 'postcss-loader',
+              options: {
+                postcssOptions: {
+                  plugins: ['autoprefixer'],
+                },
+              },
+            },
+            {
+              loader: 'sass-loader',
+            },
+          ],
         },
         {
           test: /\.tsx?$/,
@@ -146,7 +149,7 @@ module.exports = env => {
         },
       ],
     },
-    mode: 'production',
+    mode: 'development',
     performance: {
       hints: false,
     },

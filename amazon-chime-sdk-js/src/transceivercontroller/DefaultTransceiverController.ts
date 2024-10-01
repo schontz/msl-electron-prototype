@@ -52,7 +52,7 @@ export default class DefaultTransceiverController
   constructor(
     protected logger: Logger,
     protected browserBehavior: BrowserBehavior,
-    protected meetingSessionContext?: AudioVideoControllerState,
+    protected meetingSessionContext?: AudioVideoControllerState
   ) {}
 
   async setEncodingParameters(
@@ -467,15 +467,81 @@ export default class DefaultTransceiverController
       // @ts-ignore
       const sendVideoStreams = this._localCameraTransceiver.sender.createEncodedStreams();
       const { readable: sendVideoReadable, writable: sendVideoWritable } = sendVideoStreams;
-      this.insertableStreamWorker.postMessage(
-        {
-          operation: 'encode',
-          readable: sendVideoReadable,
-          writable: sendVideoWritable,
-          device: 'video',
-        },
-        [sendVideoReadable, sendVideoWritable]
-      );
+      Object.assign(globalThis, { logStats: this.logStats });
+      const { stats } = this;
+      const rendererPort: MessagePort | undefined = (window as any).rendererPort;
+      const electronBridge: any = (window as any).electronBridge;
+      if (rendererPort) {
+        console.log('[transform] using rendererPort');
+        rendererPort.postMessage(
+          {
+            operation: 'encode',
+            // readable: sendVideoReadable,
+            // writable: sendVideoWritable,
+            device: 'video',
+          }
+          // [sendVideoReadable, sendVideoWritable]
+        );
+
+        const id = Date.now();
+
+        function whenMessage() {
+          return new Promise<MessageEvent>(resolve => {
+            const listener = (e: MessageEvent) => {
+              if (e.data.id === id) {
+                resolve(e);
+                rendererPort.removeEventListener('message', listener);
+              }
+            };
+            rendererPort.addEventListener('message', listener);
+          });
+        }
+
+        const transformer = new TransformStream({
+          start() {},
+          async transform(encodedFrame, controller) {
+            rendererPort.postMessage({
+              operation: 'encode',
+              id,
+              frame: encodedFrame.data,
+            });
+            const event = await whenMessage();
+            encodedFrame.data = event.data.frame;
+            controller.enqueue(encodedFrame);
+          },
+          flush() {},
+        });
+        sendVideoReadable.pipeThrough(transformer).pipeTo(sendVideoWritable);
+      } else if (electronBridge) {
+        console.log('[transform] using ipc');
+        const senderTransform = new TransformStream({
+          start() {},
+          async transform(encodedFrame, controller) {
+            const start = performance.now();
+            const newData: ArrayBuffer = await electronBridge.transformFrame(
+              'encode',
+              encodedFrame.data
+            );
+            encodedFrame.data = newData;
+            controller.enqueue(encodedFrame);
+            const rtt = performance.now() - start;
+            stats.encode.push(rtt);
+          },
+          flush() {},
+        });
+        sendVideoReadable.pipeThrough(senderTransform).pipeTo(sendVideoWritable);
+      } else {
+        console.log('[transform] using worker');
+        this.insertableStreamWorker.postMessage(
+          {
+            operation: 'encode',
+            readable: sendVideoReadable,
+            writable: sendVideoWritable,
+            device: 'video',
+          },
+          [sendVideoReadable, sendVideoWritable]
+        );
+      }
     }
     /* istanbul ignore next */
     this.meetingSessionContext?.audioVideoController.addObserver(this);
@@ -483,23 +549,71 @@ export default class DefaultTransceiverController
     this.addRedundantAudioRecoveryMetricsObserver(this.meetingSessionContext?.statsCollector);
   }
 
+  stats: { decode: number[]; encode: number[] } = {
+    decode: [],
+    encode: [],
+  };
+
+  logStats = () => {
+    const {
+      stats: { decode, encode },
+    } = this;
+    function log(data: number[], label: string) {
+      try {
+        const sum = data.reduce((acc, curr) => acc + curr, 0);
+        const avg = sum / data.length;
+        const median = data.slice().sort()[Math.floor(data.length / 2)];
+        const max = data.reduce((max, curr) => Math.max(max, curr), 0);
+        const min = data.reduce((min, curr) => Math.min(min, curr), Infinity);
+        console.log('[stats]', label, avg, 'avg |', median, 'median |', min, 'min |', max, 'max |');
+      } catch {
+        console.log('[stats]', label, 'no stats');
+      }
+    }
+    log(encode, 'encode');
+    log(decode, 'decode');
+  };
+
   setupReceiverInsertableStream(receiver: RTCRtpReceiver, kind: string) {
     // @ts-ignore
     const receiveVideoStreams = receiver.createEncodedStreams();
     const { readable: receiveVideoReadable, writable: receiveVideoWritable } = receiveVideoStreams;
-    if (!this.insertableStreamWorker) {
-      this.insertableStreamWorker = new Worker(this.insertableStreamWorkerURL);
-    }
+    Object.assign(globalThis, { logStats: this.logStats });
+    const { stats } = this;
 
-    this.insertableStreamWorker.postMessage(
-      {
-        operation: 'decode',
-        readable: receiveVideoReadable,
-        writable: receiveVideoWritable,
-        device: 'video',
-      },
-      [receiveVideoReadable, receiveVideoWritable]
-    );
+    const electronBridge: any = (window as any).electronBridge;
+    if (electronBridge) {
+      const receiverTransform = new TransformStream({
+        start() {},
+        async transform(encodedFrame, controller) {
+          const start = performance.now();
+          const newData: ArrayBuffer = await electronBridge.transformFrame(
+            'decode',
+            encodedFrame.data
+          );
+          encodedFrame.data = newData;
+          controller.enqueue(encodedFrame);
+          const rtt = performance.now() - start;
+          stats.decode.push(rtt);
+        },
+        flush() {},
+      });
+      receiveVideoReadable.pipeThrough(receiverTransform).pipeTo(receiveVideoWritable);
+    } else {
+      if (!this.insertableStreamWorker) {
+        this.insertableStreamWorker = new Worker(this.insertableStreamWorkerURL);
+      }
+
+      this.insertableStreamWorker.postMessage(
+        {
+          operation: 'decode',
+          readable: receiveVideoReadable,
+          writable: receiveVideoWritable,
+          device: 'video',
+        },
+        [receiveVideoReadable, receiveVideoWritable]
+      );
+    }
   }
 
   protected transceiverIsVideo(transceiver: RTCRtpTransceiver): boolean {
