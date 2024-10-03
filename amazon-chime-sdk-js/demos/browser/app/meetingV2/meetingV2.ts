@@ -380,7 +380,7 @@ export class DemoMeetingApp
 
   supportsVoiceFocus = false;
   enableVoiceFocus = false;
-  joinMuted = false;
+  joinMuted = true;
   voiceFocusIsActive = false;
 
   supportsBackgroundBlur = false;
