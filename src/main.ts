@@ -1,6 +1,23 @@
 import { app, BrowserWindow, ipcMain, MessageChannelMain } from 'electron';
 import path from 'path';
 
+const CUSTOM_URL_ARG = process.argv.indexOf('--url');
+const USE_CUSTOM_URL = CUSTOM_URL_ARG > -1;
+const CUSTOM_URL = USE_CUSTOM_URL ? process.argv[CUSTOM_URL_ARG+1] : '';
+
+if (isUrl(CUSTOM_URL) && new URL(CUSTOM_URL).protocol === 'https:') {
+  app.commandLine.appendSwitch('ignore-certificate-errors');
+}
+
+function isUrl(url: string) {
+  try {
+    new URL(url);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (require('electron-squirrel-startup')) {
   app.quit();
@@ -13,16 +30,11 @@ const createWindow = () => {
     height: 600,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
+      webSecurity: !USE_CUSTOM_URL,
     },
   });
 
-  // and load the index.html of the app.
-  // if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
-  //   mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
-  // } else {
-  //   mainWindow.loadFile(path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`));
-  // }
-  mainWindow.loadURL(`http://127.0.0.1:8080/`)
+  mainWindow.loadURL(isUrl(CUSTOM_URL) ? CUSTOM_URL : 'http://127.0.0.1:8080/');
 
   // Open the DevTools.
   // mainWindow.webContents.openDevTools();
